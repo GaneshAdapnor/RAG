@@ -67,13 +67,12 @@ if not USE_API_MODE:
     sys.path.insert(0, os.path.dirname(__file__))
     try:
         from app.core.logging_config import setup_logging
-        from app.services.vector_store import get_vector_store
-        from app.services.embedding_service import get_embedding_model
+        from app.core.config import get_settings
+        from app.core.dependencies import get_vector_store, get_embedding_service, get_query_service
+        from app.models.api import QueryRequest
         from app.services.ingestion_service import (
             ingest_document, get_job, create_doc_id, validate_upload,
         )
-        from app.services.retrieval_service import retrieve_chunks, build_context
-        from app.services.llm_service import generate_answer
 
         setup_logging("WARNING")  # Keep logs quiet in the UI process
 
@@ -108,9 +107,8 @@ if "store_loaded" not in st.session_state:
 
 if not USE_API_MODE and not st.session_state.store_loaded:
     with st.spinner("Loading vector store…"):
-        store = get_vector_store()
-        store.load()
-        get_embedding_model()   # warm-up
+        get_vector_store()       # lru_cache: loads index from disk on first call
+        get_embedding_service()  # warm-up: downloads model if not cached
     st.session_state.store_loaded = True
 
 # ---------------------------------------------------------------------------
@@ -125,13 +123,12 @@ def backend_health() -> dict | None:
         except Exception:
             return None
     else:
-        store = get_vector_store()
-        from app.core.config import settings
+        stats = get_vector_store().stats()
         return {
             "status": "ok",
-            "indexed_chunks": store.total_chunks,
-            "indexed_documents": store.total_documents,
-            "embedding_model": settings.EMBEDDING_MODEL_NAME,
+            "indexed_chunks": stats["indexed_chunks"],
+            "indexed_documents": stats["indexed_documents"],
+            "embedding_model": get_settings().embedding_model_name,
         }
 
 
@@ -202,35 +199,29 @@ def backend_query(query: str, top_k: int, doc_ids: list[str] | None) -> dict | N
             return None
     else:
         try:
-            chunks, retrieval_ms = retrieve_chunks(query, top_k=top_k, doc_ids=doc_ids)
-        except RuntimeError as e:
-            st.error(str(e))
-            return None
-
-        context = build_context(chunks)
-
-        try:
-            answer, generation_ms = generate_answer(query, context, chunks)
-        except RuntimeError as e:
+            result = get_query_service().answer(
+                QueryRequest(question=query, top_k=top_k, document_ids=doc_ids)
+            )
+        except Exception as e:
             st.error(str(e))
             return None
 
         return {
-            "query": query,
-            "answer": answer,
+            "query": result.question,
+            "answer": result.answer,
+            "retrieval_latency_ms": 0.0,
+            "generation_latency_ms": result.latency_ms,
             "sources": [
                 {
-                    "doc_id": c.doc_id,
-                    "filename": c.filename,
-                    "chunk_id": c.chunk_id,
-                    "page": c.page,
-                    "text": c.text,
-                    "score": c.score,
+                    "doc_id": s.document_id,
+                    "filename": s.filename,
+                    "chunk_id": s.chunk_id,
+                    "page": s.page_start,
+                    "text": s.excerpt,
+                    "score": s.score,
                 }
-                for c in chunks
+                for s in result.sources
             ],
-            "retrieval_latency_ms": round(retrieval_ms, 2),
-            "generation_latency_ms": round(generation_ms, 2),
         }
 
 # ---------------------------------------------------------------------------
