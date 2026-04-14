@@ -230,7 +230,7 @@ def backend_query(query: str, top_k: int, doc_ids: list[str] | None) -> dict | N
 # ---------------------------------------------------------------------------
 
 STATUS_ICON = {
-    "pending": "🕐", "processing": "⚙️", "completed": "✅", "failed": "❌",
+    "pending": "🕐", "processing": "⚙️", "completed": "✅", "ready": "✅", "failed": "❌",
 }
 
 # ---------------------------------------------------------------------------
@@ -308,7 +308,7 @@ with st.sidebar:
                             doc["status"] = status_data["status"]
                             doc["chunk_count"] = status_data.get("chunk_count", 0)
                             doc["error"] = status_data.get("error")
-                if status_data and status_data["status"] == "completed":
+                if status_data and status_data["status"] in ("completed", "ready"):
                     st.success(f"'{uf.name}' indexed — {status_data['chunk_count']} chunks.")
                 elif status_data and status_data["status"] == "failed":
                     st.error(f"Failed: {status_data.get('error')}")
@@ -330,7 +330,7 @@ with st.sidebar:
         if USE_API_MODE:
             if st.button("🔄 Refresh statuses", use_container_width=True):
                 for doc in st.session_state.documents:
-                    if doc["status"] not in ("completed", "failed"):
+                    if doc["status"] not in ("completed", "ready", "failed"):
                         data = backend_status(doc["doc_id"])
                         if data:
                             doc["status"] = data["status"]
@@ -341,7 +341,7 @@ with st.sidebar:
         for doc in st.session_state.documents:
             icon = STATUS_ICON.get(doc["status"], "?")
             st.markdown(f"{icon} **{doc['filename']}** — {doc['status'].capitalize()}")
-            if doc["status"] == "completed":
+            if doc["status"] in ("completed", "ready"):
                 st.caption(f"  {doc['chunk_count']} chunks")
             elif doc["status"] == "failed":
                 st.caption(f"  Error: {doc['error']}")
@@ -349,7 +349,7 @@ with st.sidebar:
     st.divider()
 
     # --- Scope filter ---
-    completed_docs = [d for d in st.session_state.documents if d["status"] == "completed"]
+    completed_docs = [d for d in st.session_state.documents if d["status"] in ("completed", "ready")]
     if completed_docs:
         st.subheader("Search Scope")
         search_all = st.checkbox("Search all documents", value=True)
