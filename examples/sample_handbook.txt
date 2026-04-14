@@ -1,0 +1,13 @@
+ACME Engineering Handbook
+
+Work Hours
+Core collaboration hours are 10:00 to 16:00 local time from Monday through Friday. Outside those hours, employees may choose flexible schedules as long as team commitments are met.
+
+Remote Work
+Full-time employees may work remotely up to three days per week. Requests for fully remote exceptions must be approved by the department director and People Operations. Employees must keep their calendar updated with remote-working locations for security and payroll compliance.
+
+Incident Response
+Any production incident classified as Severity 1 requires an incident commander within 15 minutes. A written post-incident review must be published within five business days. Customer-facing status updates must be posted at least every 30 minutes until mitigation is complete.
+
+Security
+All customer data exports must be encrypted at rest and in transit. Secrets may not be stored in source control. Access to production systems requires multi-factor authentication.

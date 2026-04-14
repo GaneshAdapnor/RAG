@@ -1,41 +1,8 @@
-# Environment & secrets
 .env
-*.env
-
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-dist/
-build/
-.eggs/
-
-# Virtual environments
 .venv/
-venv/
-env/
-
-# FAISS index & metadata (runtime data, not source)
-data/faiss_index.bin
-data/metadata.json
-data/metadata.tmp
-
-# Streamlit local config
-.streamlit/secrets.toml
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Model cache (sentence-transformers downloads here)
-# Uncomment if you don't want to commit cached models
-# ~/.cache/huggingface/
+__pycache__/
+*.pyc
+data/uploads/*
+data/index/*
+!data/uploads/.gitkeep
+!data/index/.gitkeep

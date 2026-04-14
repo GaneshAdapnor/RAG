@@ -1,93 +1,101 @@
-# Production RAG Question Answering API
+# Production RAG QA API
 
-A production-quality Retrieval-Augmented Generation (RAG) system built from first principles. Upload PDF or TXT documents, then ask questions — get accurate, grounded answers backed by source attribution.
+A production-quality **Retrieval-Augmented Generation (RAG) Question Answering API** built from first principles with FastAPI, FAISS, and OpenAI. Upload PDF or TXT documents, then ask questions and receive accurate, grounded answers with full source attribution.
 
 ---
 
-## Architecture Overview
+## Table of Contents
+
+1. [Architecture](#architecture)
+2. [Project Structure](#project-structure)
+3. [Setup & Installation](#setup--installation)
+4. [Configuration](#configuration)
+5. [API Reference](#api-reference)
+6. [Streamlit UI](#streamlit-ui)
+7. [Streamlit Cloud Deployment](#streamlit-cloud-deployment)
+8. [Design Decisions](#design-decisions)
+9. [Troubleshooting](#troubleshooting)
+
+---
+
+## Architecture
+
+> **diagram:** open `architecture.drawio` at [app.diagrams.net](https://app.diagrams.net) (File → Import From → Device)
+
+### Component map
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                           FastAPI Application                             │
-│                                                                          │
-│  ┌─────────────┐    ┌──────────────────┐    ┌─────────────────────────┐ │
-│  │ POST /upload│    │  POST /query     │    │     GET /health         │ │
-│  └──────┬──────┘    └────────┬─────────┘    └─────────────────────────┘ │
-│         │ 202              │                                             │
-│  ┌──────▼──────┐    ┌──────▼─────────────────────────────────────────┐  │
-│  │  Background │    │               Query Pipeline                    │  │
-│  │    Task     │    │                                                 │  │
-│  │             │    │  1. embed_query()  ──► EmbeddingService         │  │
-│  │  Ingestion  │    │  2. faiss.search() ──► FAISSVectorStore         │  │
-│  │  Pipeline:  │    │  3. build_context()                             │  │
-│  │             │    │  4. generate_answer() ──► OpenAI GPT-4o-mini    │  │
-│  │ ┌─────────┐ │    └─────────────────────────────────────────────────┘  │
-│  │ │Extract  │ │                                                         │
-│  │ │(PDF/TXT)│ │                                                         │
-│  │ └────┬────┘ │                                                         │
-│  │      │      │                                                         │
-│  │ ┌────▼────┐ │                                                         │
-│  │ │  Chunk  │ │                                                         │
-│  │ │(500c/50)│ │                                                         │
-│  │ └────┬────┘ │                                                         │
-│  │      │      │                                                         │
-│  │ ┌────▼────┐ │                                                         │
-│  │ │  Embed  │ │                                                         │
-│  │ │MiniLM   │ │                                                         │
-│  │ └────┬────┘ │                                                         │
-│  │      │      │                                                         │
-│  │ ┌────▼────┐ │                                                         │
-│  │ │  FAISS  │ │                                                         │
-│  │ │  Store  │ │                                                         │
-│  │ └─────────┘ │                                                         │
-│  └─────────────┘                                                         │
-└──────────────────────────────────────────────────────────────────────────┘
-
-Persistence Layer:
-  ┌──────────────────────────────┐
-  │  ./data/faiss_index.bin      │  ← FAISS binary index (float32 vectors)
-  │  ./data/metadata.json        │  ← Parallel chunk metadata (text, doc_id, page)
-  └──────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      FastAPI Backend  (port 8000)                           │
+│                                                                             │
+│  POST /upload          POST /query            GET /health                   │
+│       │                     │                      │                        │
+│  ─────────────────────────────────────────────────────────────────────────  │
+│  INGESTION PIPELINE    QUERY PIPELINE                                       │
+│                                                                             │
+│  Save file to disk     TokenBucketRateLimiter                               │
+│  DocumentRegistry      QueryService.answer()                                │
+│    .create()             embed_query()                                      │
+│  BackgroundTask ──►      FaissVectorStore.search()                         │
+│    DocumentParser        LLMService.generate_answer() ──► OpenAI API       │
+│    TextChunker           MetricsService (latency)                           │
+│    EmbeddingService      QueryResponse                                      │
+│    FaissVectorStore                                                         │
+│      .add_embeddings()                                                      │
+│                                                                             │
+│  ─────────────────────────────────────────────────────────────────────────  │
+│  STORAGE LAYER  ./data/                                                     │
+│  uploads/        index/faiss.index    vector_metadata.json  documents.json  │
+└─────────────────────────────────────────────────────────────────────────────┘
+         ▲                                              ▲
+         │ HTTP                                         │ HTTP
+┌────────┴───────┐                          ┌──────────┴───────┐
+│  Streamlit UI  │                          │   curl / client  │
+│  (port 8501)   │                          └──────────────────┘
+└────────────────┘
 ```
 
-### Component Interactions
+### End-to-end data flow
 
-| Component | Role | Why chosen |
-|-----------|------|-----------|
-| **FastAPI** | HTTP server, request routing, background tasks | Native async, auto-docs, Pydantic integration |
-| **BackgroundTasks** | Non-blocking document ingestion | Zero-dependency async; sufficient for serial ingestion |
-| **sentence-transformers** | Text → dense vector encoding | Free, local, 384-dim, competitive retrieval quality |
-| **FAISS IndexFlatIP** | Exact cosine similarity search | No approximation needed at < 500K vectors; simple; fast |
-| **OpenAI GPT-4o-mini** | Grounded answer generation | Strong instruction following; cost-effective; 128K context |
-| **SlowAPI** | Per-IP rate limiting | Flask-Limiter port for FastAPI; Redis-compatible |
-| **PyPDF2** | PDF text extraction | Pure-Python; no system dependencies |
-
-### End-to-End Data Flow
-
+#### Upload flow
 ```
-Upload:
-  HTTP multipart/form-data
-    → validate (type, size)
-    → assign doc_id (UUID4)
-    → schedule BackgroundTask
-    → return 202 with doc_id
-         ↓ (async)
-    → extract_text() per page
-    → chunk_pages() sliding window (500c, 50c overlap)
-    → embed_texts() → L2-normalized float32[384]
-    → faiss.add() + metadata.append()
-    → faiss.write_index() + json.dump() (atomic)
-    → job status → COMPLETED
-
-Query:
-  HTTP POST {query, top_k?, doc_ids?}
-    → embed_query() → float32[384]
-    → faiss.search(k=5) → [(index, score)]
-    → filter by doc_ids + similarity threshold (0.30)
-    → build_context() → formatted string
-    → openai.chat.completions.create()
-    → return {answer, sources, latency_metrics}
+POST /upload (multipart/form-data)
+  → validate extension (.pdf / .txt)
+  → stream file to  data/uploads/{uuid}_{filename}
+  → DocumentRegistry.create()  →  data/index/documents.json  (status: pending)
+  → return 202 Accepted  {document_id, filename, status, bytes_written}
+       ↓ (BackgroundTask — non-blocking)
+  DocumentIngestionService.ingest_document(document_id)
+    → DocumentParser.parse()       PDF: PyPDF2 page-by-page | TXT: UTF-8 / latin-1
+    → TextChunker.chunk_pages()    sliding window 500 tok / 100 tok overlap
+    → EmbeddingService.embed_texts()  all-MiniLM-L6-v2 · 384-dim · L2-normalized
+    → FaissVectorStore.add_embeddings()  IndexFlatIP + atomic JSON persist
+    → DocumentRegistry.mark_ready()  →  documents.json  (status: ready)
 ```
+
+#### Query flow
+```
+POST /query  {question, top_k?, document_ids?}
+  → enforce_rate_limit (TokenBucket per-IP)
+  → QueryService.answer()
+      → EmbeddingService.embed_query()   → float32[384]
+      → FaissVectorStore.search()        → top-k  (cosine sim ≥ 0.22)
+      → LLMService.generate_answer()     → grounded answer + citations
+      → MetricsService.record_latency()
+  → return 200  {question, answer, answer_model, latency_ms, sources[]}
+```
+
+### Why these choices?
+
+| Component | Choice | Reason |
+|---|---|---|
+| **Web framework** | FastAPI | Native async, Pydantic v2, BackgroundTasks, auto-OpenAPI docs |
+| **Vector index** | `FAISS IndexFlatIP` | Exact cosine search (via L2-norm); no training; < 5 ms at < 500 K vectors |
+| **Embedding model** | `all-MiniLM-L6-v2` | Free, local, 384-dim, runs on CPU, competitive semantic retrieval |
+| **LLM** | `gpt-4o-mini` | Strong instruction following, $0.15/1 M tokens, 128 K context |
+| **Background jobs** | `FastAPI BackgroundTasks` | Zero-dependency; sufficient for sequential ingestion; Celery-ready boundary |
+| **Rate limiting** | Custom `TokenBucketRateLimiter` | Sliding window; no external broker; per-IP isolation |
+| **Chunking** | Sliding window 500 tok / 100 tok overlap | Balances context preservation vs embedding quality; stays inside MiniLM's 256-wordpiece limit |
 
 ---
 
@@ -96,125 +104,140 @@ Query:
 ```
 RAG/
 ├── app/
-│   ├── main.py                   # FastAPI app factory, lifespan, middleware
+│   ├── main.py                          # App factory, startup hooks, route registration
+│   ├── api/
+│   │   └── routes/
+│   │       ├── health.py                # GET /health
+│   │       ├── upload.py                # POST /upload
+│   │       └── query.py                 # POST /query
 │   ├── core/
-│   │   ├── config.py             # Pydantic Settings (env-var driven)
-│   │   └── logging_config.py     # Structured logging setup
+│   │   ├── config.py                    # Pydantic Settings (env-var driven, lru_cache)
+│   │   ├── dependencies.py              # FastAPI dependency factory functions
+│   │   └── logging_config.py            # Structured logging setup
 │   ├── models/
-│   │   └── schemas.py            # All Pydantic v2 request/response models
-│   ├── routes/
-│   │   ├── upload.py             # POST /upload, GET /upload/status/{id}
-│   │   ├── query.py              # POST /query
-│   │   └── health.py             # GET /health
+│   │   ├── domain.py                    # Internal dataclasses (DocumentRecord, ChunkRecord …)
+│   │   └── api.py                       # Request/response Pydantic schemas
 │   ├── services/
-│   │   ├── embedding_service.py  # SentenceTransformer singleton, embed_texts()
-│   │   ├── vector_store.py       # FAISSVectorStore (add, search, persist)
-│   │   ├── ingestion_service.py  # Full ingestion pipeline + job tracking
-│   │   ├── retrieval_service.py  # Query embed → FAISS → context builder
-│   │   └── llm_service.py        # OpenAI client, grounded prompt, generate_answer()
+│   │   ├── document_ingestion.py        # Orchestrates the full ingestion pipeline
+│   │   ├── document_parser.py           # PDF (PyPDF2) and TXT extraction
+│   │   ├── document_registry.py         # Thread-safe document state, persisted to JSON
+│   │   ├── chunker.py                   # Token-based sliding-window chunker
+│   │   ├── embedding_service.py         # SentenceTransformer singleton, embed_texts / embed_query
+│   │   ├── vector_store.py              # FaissVectorStore — add / search / stats
+│   │   ├── llm_service.py               # OpenAI GPT-4o-mini + extractive fallback
+│   │   ├── query_service.py             # Query orchestration (embed → retrieve → generate)
+│   │   └── metrics_service.py           # In-process latency rolling window
 │   └── utils/
-│       ├── text_extraction.py    # PDF (PyPDF2) + TXT extraction
-│       ├── chunking.py           # Sliding window chunker with overlap
-│       └── rate_limiter.py       # SlowAPI limiter, client IP detection
-├── data/                         # FAISS index + metadata (auto-created)
+│       ├── files.py                     # File I/O helpers, atomic JSON write
+│       ├── text.py                      # Text normalization, tokenization
+│       ├── rate_limiter.py              # TokenBucketRateLimiter (per-IP)
+│       └── logging.py                   # configure_logging()
+├── data/
+│   ├── uploads/                         # Raw uploaded files (gitignored)
+│   └── index/                           # FAISS index + JSON metadata (gitignored)
 ├── examples/
-│   └── sample_query.py           # End-to-end demo script (curl-based)
-├── streamlit_app.py              # Browser UI (talks to FastAPI over HTTP)
+│   ├── sample_handbook.txt              # Sample document for testing
+│   └── sample_query.py                  # End-to-end HTTP demo script
+├── streamlit_app.py                     # Browser UI (standalone or API-mode)
+├── architecture.drawio                  # Architecture diagram (draw.io)
 ├── requirements.txt
 ├── .env.example
-└── README.md
+└── .streamlit/
+    └── secrets.toml.example            # Streamlit secrets template
 ```
 
 ---
 
-## Streamlit UI
+## Setup & Installation
 
-A browser-based frontend is included. It talks to the FastAPI backend over HTTP — no backend changes required.
-
-```
-┌─────────────────────────────┐       HTTP        ┌──────────────────────┐
-│   Streamlit  (port 8501)    │ ────────────────► │  FastAPI  (port 8000)│
-│                             │                   │                      │
-│  Sidebar:                   │  POST /upload     │  Embedding           │
-│   • File uploader           │  GET  /status     │  FAISS search        │
-│   • Doc status badges       │  POST /query      │  OpenAI generation   │
-│   • Search scope filter     │ ◄──────────────── │                      │
-│  Main:                      │                   └──────────────────────┘
-│   • Question input          │
-│   • Answer + latency pills  │
-│   • Collapsible sources     │
-└─────────────────────────────┘
-```
-
-**Run both together:**
-
-```bash
-# Terminal 1 — API backend
-uvicorn app.main:app --reload --port 8000
-
-# Terminal 2 — Streamlit UI
-streamlit run streamlit_app.py
-```
-
-Then open [http://localhost:8501](http://localhost:8501).
-
----
-
-## Setup
-
-### 1. Prerequisites
+### Prerequisites
 
 - Python 3.10+
-- OpenAI API key ([get one here](https://platform.openai.com/api-keys))
+- An OpenAI API key — [get one here](https://platform.openai.com/api-keys)
+
+### 1. Clone and create a virtual environment
+
+```bash
+git clone https://github.com/GaneshAdapnor/RAG.git
+cd RAG
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+```
 
 ### 2. Install dependencies
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
-# Install packages
 pip install -r requirements.txt
 ```
+
+> **First run note:** `sentence-transformers` downloads `all-MiniLM-L6-v2` (~90 MB) from
+> HuggingFace Hub on first startup. It is cached in `~/.cache/huggingface/` for subsequent runs.
 
 ### 3. Configure environment
 
 ```bash
 cp .env.example .env
-# Edit .env and set OPENAI_API_KEY=sk-your-key-here
 ```
 
-### 4. Run the server
+Edit `.env` and set your OpenAI key:
 
-**API only:**
+```ini
+OPENAI_API_KEY=sk-your-key-here
+```
+
+All other defaults are production-ready out of the box.
+
+### 4. Run
+
+**API only (REST interface):**
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**API + Streamlit UI (two terminals):**
+**API + Streamlit browser UI (two terminals):**
 ```bash
-# Terminal 1
+# Terminal 1 — backend
 uvicorn app.main:app --reload --port 8000
 
-# Terminal 2
+# Terminal 2 — frontend
 streamlit run streamlit_app.py
 ```
 
-On first start, the embedding model (`all-MiniLM-L6-v2`, ~90MB) is downloaded
-from HuggingFace Hub automatically. Subsequent starts use the cached model.
+Open:
+- API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+- Streamlit UI: [http://localhost:8501](http://localhost:8501)
 
 ---
 
-## API Usage
+## Configuration
 
-### Interactive docs
+All settings live in `.env` (or environment variables). Managed by Pydantic `BaseSettings`.
 
-Open [http://localhost:8000/docs](http://localhost:8000/docs) for the Swagger UI.
+| Variable | Default | Description |
+|---|---|---|
+| `OPENAI_API_KEY` | *(required)* | OpenAI API key |
+| `LLM_MODEL_NAME` | `gpt-4o-mini` | OpenAI model for answer generation |
+| `EMBEDDING_MODEL_NAME` | `all-MiniLM-L6-v2` | Sentence-transformers model name |
+| `EMBEDDING_DIM` | `384` | Must match model output dimension |
+| `CHUNK_SIZE_TOKENS` | `500` | Tokens per chunk (whitespace-split) |
+| `CHUNK_OVERLAP_TOKENS` | `100` | Token overlap between adjacent chunks |
+| `TOP_K_RETRIEVAL` | `4` | Default chunks retrieved per query |
+| `SEARCH_MIN_SCORE` | `0.22` | Minimum cosine similarity to include a chunk |
+| `LLM_TEMPERATURE` | `0.1` | LLM sampling temperature (0 = deterministic) |
+| `LLM_MAX_TOKENS` | `500` | Maximum tokens in generated answer |
+| `ENABLE_EXTRACTIVE_FALLBACK` | `true` | Return extractive answer when no API key is set |
+| `RATE_LIMIT_CALLS` | `10` | Max requests per client IP per period |
+| `RATE_LIMIT_PERIOD_SECONDS` | `60` | Rate limit window in seconds |
+| `MAX_UPLOAD_BYTES` | `20971520` | Max upload size (default 20 MB) |
+| `LOG_LEVEL` | `INFO` | Python logging level |
 
 ---
 
-### GET /health
+## API Reference
+
+### `GET /health`
+
+Returns service status and index statistics.
 
 ```bash
 curl http://localhost:8000/health
@@ -224,241 +247,226 @@ curl http://localhost:8000/health
 {
   "status": "ok",
   "version": "1.0.0",
-  "embedding_model": "all-MiniLM-L6-v2",
-  "indexed_chunks": 0,
-  "indexed_documents": 0
+  "indexed_documents": 2,
+  "indexed_chunks": 47,
+  "documents_by_status": {
+    "pending": 0,
+    "processing": 0,
+    "ready": 2,
+    "failed": 0
+  },
+  "average_query_latency_ms": 312.4
 }
 ```
 
 ---
 
-### POST /upload
+### `POST /upload`
 
-Upload a PDF or TXT file for indexing.
+Upload a PDF or TXT file. Returns immediately with `202 Accepted`; processing happens in the background.
 
 ```bash
 curl -X POST http://localhost:8000/upload \
-  -F "file=@/path/to/your/document.pdf"
+  -F "file=@./examples/sample_handbook.txt"
 ```
 
 ```json
 {
-  "doc_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "filename": "document.pdf",
+  "document_id": "a4c85b5bcfb44f54bf8130a4baef0d8d",
+  "filename": "sample_handbook.txt",
   "status": "pending",
-  "message": "Document 'document.pdf' accepted for processing. Poll GET /upload/status/3fa85f64... to track progress."
+  "bytes_written": 4821,
+  "message": "Document accepted and queued for background ingestion."
 }
 ```
 
-#### Poll processing status
+**Statuses:** `pending` → `processing` → `ready` | `failed`
 
-```bash
-curl http://localhost:8000/upload/status/3fa85f64-5717-4562-b3fc-2c963f66afa6
-```
+Poll `GET /health` or `GET /upload/status/{document_id}` *(if implemented)* to check progress. A document is queryable once `ready`.
 
-```json
-{
-  "doc_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "filename": "document.pdf",
-  "status": "completed",
-  "chunk_count": 42,
-  "error": null
-}
-```
-
-Statuses: `pending` → `processing` → `completed` | `failed`
+**Constraints:**
+- Accepted types: `.pdf`, `.txt`
+- Max size: 20 MB (configurable via `MAX_UPLOAD_BYTES`)
+- Rate limited: configurable per-IP token bucket
 
 ---
 
-### POST /query
+### `POST /query`
+
+Ask a question. The system retrieves the most relevant chunks and generates a grounded answer.
 
 ```bash
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "What are the main findings of the battery research?",
-    "top_k": 5
+    "question": "What are the main findings of the battery research?",
+    "top_k": 4
   }'
 ```
 
 ```json
 {
-  "query": "What are the main findings of the battery research?",
-  "answer": "According to quantum_battery_report.txt, the main findings are:\n1. The new lithium-ceramic composite achieved an energy density of 450 Wh/kg — 2.5× greater than conventional lithium-ion batteries.\n2. Cycle life of 92% capacity after 1,200 cycles.\n3. Elimination of thermal runaway risk.\n4. Production cost of $185/kWh, projected to drop to $72/kWh at scale.",
+  "question": "What are the main findings of the battery research?",
+  "answer": "According to sample_handbook.txt (p.1–2), the main findings include...",
+  "answer_model": "gpt-4o-mini",
+  "latency_ms": 287.5,
+  "retrieved_chunks": 4,
+  "documents_considered": ["a4c85b5bcfb44f54bf8130a4baef0d8d"],
   "sources": [
     {
-      "doc_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-      "filename": "quantum_battery_report.txt",
-      "chunk_id": 2,
-      "page": null,
-      "text": "Key Findings\n============\n1. Energy Density: The new composite achieved 450 Wh/kg...",
-      "score": 0.8921
+      "document_id": "a4c85b5bcfb44f54bf8130a4baef0d8d",
+      "filename": "sample_handbook.txt",
+      "chunk_id": "chunk-00002",
+      "page_start": 1,
+      "page_end": 2,
+      "score": 0.8734,
+      "excerpt": "Key Findings: The new composite achieved 450 Wh/kg..."
     }
-  ],
-  "retrieval_latency_ms": 18.4,
-  "generation_latency_ms": 1243.7
+  ]
 }
 ```
 
-#### Filter by document
+**Request fields:**
 
-```bash
-curl -X POST http://localhost:8000/query \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "What was the R&D investment?",
-    "top_k": 3,
-    "doc_ids": ["3fa85f64-5717-4562-b3fc-2c963f66afa6"]
-  }'
-```
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `question` | string | Yes | Natural language question (3–2000 chars) |
+| `top_k` | integer | No | Chunks to retrieve (1–10, default from config) |
+| `document_ids` | string[] | No | Restrict search to these document IDs; omit to search all ready documents |
+
+**Error responses:**
+
+| Status | Condition |
+|---|---|
+| `400` | Unsupported file type on upload |
+| `409` | No ready documents available to query |
+| `413` | File exceeds `MAX_UPLOAD_BYTES` |
+| `429` | Rate limit exceeded |
+| `404` | Unknown `document_id` in query scope |
 
 ---
 
-## Run the sample demo
+### Run the demo script
 
 ```bash
-# Make sure the server is running first
+# Server must be running first
 python examples/sample_query.py
 ```
 
-Expected output (with valid OpenAI key):
-
-```
-STEP 1: Uploading 'quantum_battery_report.txt'...
-Accepted: doc_id=abc123...
-
-STEP 2: Waiting for background processing...
-  [  2.0s] status=processing | chunks=18
-
-STEP 3: Querying the RAG system...
-Query: What energy density did the new battery achieve?
-
-[ANSWER]
-According to quantum_battery_report.txt, the new lithium-ceramic
-composite electrolyte achieved an energy density of 450 Wh/kg —
-approximately 2.5 times greater than conventional lithium-ion batteries
-(180 Wh/kg).
-
-[LATENCY]
-  Retrieval (embed + FAISS):  21.3 ms
-  Generation (OpenAI API):    987.4 ms
-  Total:                      1008.7 ms
-
-[SOURCES] (3 chunks retrieved)
-  Source 1: quantum_battery_report.txt | similarity=0.8934
-  'Key Findings === 1. Energy Density: The new composite achieved 450 Wh/kg...'
-```
+This uploads `examples/sample_handbook.txt`, waits for processing, then runs four example queries and prints answers with source attribution and latency.
 
 ---
 
-## Design Decisions & Justifications
+## Streamlit UI
 
-### Chunk Size: 500 characters, 50 overlap
+A browser interface is included — no backend changes required.
 
-| Factor | Small chunks (< 200c) | Our choice (500c) | Large chunks (> 1000c) |
-|--------|----------------------|-------------------|----------------------|
-| Precision | High — tight focus | Balanced | Low — noisy context |
-| Recall | Low — boundary cuts | Good | High |
-| Embedding quality | Poor — too little context | Good | Degrades (model limit) |
-| LLM cost | Low | Low (~600 tok/query) | High |
-| all-MiniLM limit | Safe | Safe (< 256 wordpieces) | Risk of truncation |
+```bash
+streamlit run streamlit_app.py
+```
 
-The 50-char overlap (10% of chunk size) ensures sentence-spanning facts appear
-complete in at least one chunk.
+Open [http://localhost:8501](http://localhost:8501).
 
-### Similarity Threshold: 0.30
+**Features:**
+- Drag-and-drop PDF/TXT upload with live status badges
+- Document scope selector (search all or specific docs)
+- Question input with configurable `top_k`
+- Answer display with per-chunk source cards (filename, page, similarity score, text excerpt)
+- Latency breakdown: retrieval vs generation vs total
 
-Chunks with cosine similarity < 0.30 are dropped before LLM prompting. Below
-this threshold, chunks are likely from a different topic entirely and would
-add noise. If your use case has very diverse documents, lower to 0.20.
+**Modes:**
+- **Standalone** (default, works on Streamlit Cloud): calls service functions directly — no separate API server needed
+- **API mode**: set `STREAMLIT_API_BASE=http://localhost:8000` to route calls through the FastAPI backend
 
-### top_k = 5 (default)
+---
 
-Retrieves ~2,500 characters of context. Provides enough evidence for multi-fact
-questions without triggering "lost in the middle" degradation (LLMs attend
-poorly to context buried in long prompts). Configurable per-query via `top_k`.
+## Streamlit Cloud Deployment
 
-### Retrieval Failure Example
+1. Push this repo to GitHub (already done)
+2. Go to [share.streamlit.io](https://share.streamlit.io) → **New app**
+3. Fill in:
+   - Repository: `GaneshAdapnor/RAG`
+   - Branch: `main`
+   - Main file: `streamlit_app.py`
+4. Click **Advanced settings → Secrets** and paste:
+   ```toml
+   OPENAI_API_KEY = "sk-your-key-here"
+   ```
+5. Click **Deploy**
 
-**Query:** "What was the net profit margin in Q3?"
+> **Note on persistence:** Streamlit Community Cloud has ephemeral storage. The FAISS index resets on each reboot — users re-upload documents per session. For persistent cross-session storage, mount a cloud volume or store the index in S3/GCS.
 
-**Why it fails:** The document contains _"net income as a percentage of revenue
-was 18.3% in the third quarter"_ — no phrase match for "net profit margin" or
-"Q3". Additionally, the chunk boundary splits:
-- Chunk N: `"...revenue was 18.3% in the"`
-- Chunk N+1: `"third quarter, compared to..."`
+---
 
-Retrieved score: ~0.62 (above threshold), but neither chunk alone contains
-the complete fact.
+## Design Decisions
 
-**Fixes:**
-1. Increase `CHUNK_OVERLAP` to 100+ chars so the boundary sentence appears whole.
-2. Hybrid search: combine FAISS (dense) + BM25 (sparse) scores. BM25 would
-   boost exact matches for "Q3" and "net profit".
-3. Cross-encoder re-ranking: use `cross-encoder/ms-marco-MiniLM-L-6-v2` as a
-   second-stage ranker after FAISS retrieval.
-4. Query expansion: rephrase "Q3" → "third quarter" before embedding.
+### Chunk size: 500 tokens, 100 token overlap
 
-### Metric Tracked: Latency (retrieval vs. generation)
+Token-based chunking (whitespace-split) rather than character-based is more consistent across languages. 500 tokens ≈ 350–400 words ≈ 3–6 sentences.
 
-We split latency into two components:
+| | Small (< 150 tok) | **Our choice (500 tok)** | Large (> 1 000 tok) |
+|---|---|---|---|
+| Embedding quality | Poor — too little context | Good | Degrades (MiniLM 256-piece limit) |
+| Retrieval precision | High | Balanced | Low |
+| LLM context cost | Very low | Low (~5 × 500 = 2 500 tok/query) | High |
+| Boundary information loss | High | Low (100 tok overlap) | Minimal |
 
-| Metric | Healthy range | Alert threshold |
-|--------|--------------|----------------|
-| `retrieval_latency_ms` | 5–50 ms | > 200 ms |
-| `generation_latency_ms` | 500–3000 ms | > 8000 ms |
+The 100-token overlap (20%) ensures that a fact spanning a chunk boundary appears complete in at least one chunk.
 
-**Why latency over similarity scores:**
-- Immediately observable without a labeled test set.
+### Similarity threshold: 0.22
+
+Chunks with cosine similarity < 0.22 are dropped before the LLM call. Below this score, the retrieved passage is semantically unrelated and adds noise. Tune this value based on your corpus — diverse document sets benefit from a lower threshold.
+
+### Realistic retrieval failure example
+
+**Query:** *"What was the net profit margin in Q3?"*
+
+**Why it fails:** The document contains *"net income as a percentage of revenue was 18.3% in the third quarter"* — no phrase match for "net profit margin" or "Q3". Additionally, the chunk boundary splits the sentence:
+- Chunk N ends: `"...revenue was 18.3% in the"`
+- Chunk N+1 starts: `"third quarter, compared to 21.1%..."`
+
+Retrieved score ≈ 0.61 (above threshold), but neither chunk alone contains the full fact.
+
+**Fixes (in order of effort):**
+1. Increase `CHUNK_OVERLAP_TOKENS` to 150+ so the boundary sentence is complete in at least one chunk.
+2. **Hybrid search:** combine FAISS dense score with BM25 sparse score. BM25 would rank "Q3" and "net profit" higher via exact keyword match.
+3. **Cross-encoder re-ranking:** run `cross-encoder/ms-marco-MiniLM-L-6-v2` on the top-20 FAISS results as a second stage. Cross-encoders attend jointly to query + passage, catching semantic alignments bi-encoders miss.
+4. **Query expansion:** normalize *"Q3" → "third quarter"* before embedding.
+
+### Metric tracked: query latency
+
+`latency_ms` is measured end-to-end per query (embed + retrieve + generate) and stored in a rolling 500-sample window in `MetricsService`. Returned in every `QueryResponse` and surfaced in `GET /health` as `average_query_latency_ms`.
+
+**Why latency over similarity score or accuracy:**
+- Observable without a labeled test set.
 - Directly maps to user experience.
-- Separating retrieval vs. generation latency makes root-cause analysis instant:
-  spike in retrieval → model reload or FAISS issue; spike in generation → OpenAI
-  rate limit or network issue.
-
-In production, emit these as Prometheus metrics and set p95 alerts.
+- A spike in latency is immediately actionable: profile whether the bottleneck is in embedding (< 50 ms expected), FAISS search (< 5 ms), or OpenAI (500–3000 ms).
 
 ---
 
-## Rate Limits
+## Troubleshooting
 
-| Endpoint | Limit |
-|----------|-------|
-| POST /query | 10 requests/minute/IP |
-| POST /upload | 5 requests/minute/IP |
-| GET /health | Unlimited |
-
-Exceeded requests receive `HTTP 429` with a `Retry-After: 60` header.
-
-To increase limits, edit `RATE_LIMIT_CALLS` in `.env`.
-
----
-
-## Configuration Reference
-
-All settings are in `.env` and documented in `.env.example`.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENAI_API_KEY` | required | OpenAI API key |
-| `LLM_MODEL_NAME` | `gpt-4o-mini` | OpenAI model for generation |
-| `EMBEDDING_MODEL_NAME` | `all-MiniLM-L6-v2` | Sentence-transformers model |
-| `EMBEDDING_DIM` | `384` | Must match model output dimension |
-| `CHUNK_SIZE` | `500` | Characters per chunk |
-| `CHUNK_OVERLAP` | `50` | Overlap between adjacent chunks |
-| `TOP_K_RETRIEVAL` | `5` | Default chunks retrieved per query |
-| `MAX_UPLOAD_SIZE_MB` | `50` | Max file upload size |
-| `RATE_LIMIT_CALLS` | `10` | Max query requests/minute/IP |
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `No ready documents available` on query | Document still processing or failed | Check `GET /health` → `documents_by_status`; re-upload if `failed` |
+| Empty answer / "I don't have enough information" | `SEARCH_MIN_SCORE` too high, or query semantically distant from corpus | Lower `SEARCH_MIN_SCORE` in `.env`; rephrase query |
+| `RuntimeError: No OpenAI API key` | `OPENAI_API_KEY` not set | Add key to `.env`; system uses extractive fallback if `ENABLE_EXTRACTIVE_FALLBACK=true` |
+| Slow first query | Embedding model loading | Expected on cold start; subsequent queries are fast (model cached in memory) |
+| `413 Request Entity Too Large` | File exceeds `MAX_UPLOAD_BYTES` | Increase limit in `.env` or compress the file |
+| `429 Too Many Requests` | Rate limit hit | Wait for the token bucket to refill; increase `RATE_LIMIT_CALLS` in `.env` |
+| PDF produces 0 chunks | Image-only / scanned PDF | Add OCR pre-processing with `pytesseract` before `DocumentParser` |
+| Index lost on restart (Streamlit Cloud) | Ephemeral storage | Add cloud volume mount or persist index to S3/GCS between sessions |
 
 ---
 
 ## Extending the System
 
 | Goal | Change |
-|------|--------|
-| Scale to multiple replicas | Replace in-memory job store with Redis; use `RedisStorage` for SlowAPI |
-| 1M+ vectors | Swap `IndexFlatIP` → `IndexHNSWFlat` (one line in `vector_store.py`) |
-| Scanned PDFs | Add `pytesseract` OCR step before `extract_text_from_pdf()` |
-| Hybrid search | Add BM25 index (rank_bm25); merge scores with FAISS in `retrieval_service.py` |
-| Re-ranking | Add `cross-encoder/ms-marco-MiniLM-L-6-v2` step after FAISS retrieval |
-| Local LLM | Replace `llm_service.py` with Ollama or vLLM client |
-| Persistent job state | Replace `_jobs` dict with SQLite or Redis |
+|---|---|
+| **Scale to 1 M+ vectors** | Swap `IndexFlatIP` → `IndexHNSWFlat` in `vector_store.py` (one line) |
+| **Multi-replica deployment** | Replace `lru_cache` singletons with Redis-backed stores |
+| **Persistent background jobs** | Replace `BackgroundTasks` with Celery + Redis; service boundaries already isolated |
+| **Scanned PDFs** | Add `pytesseract` OCR step in `document_parser.py` before PyPDF2 |
+| **Hybrid BM25 + FAISS** | Add `rank_bm25` index; merge scores in `query_service.py` |
+| **Re-ranking** | Add `cross-encoder/ms-marco-MiniLM-L-6-v2` pass after `vector_store.search()` |
+| **Local LLM** | Replace OpenAI client in `llm_service.py` with Ollama or vLLM |

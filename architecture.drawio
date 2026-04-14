@@ -1,0 +1,357 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-04-14T00:00:00.000Z" version="21.0.0" type="device">
+  <diagram id="rag-system-architecture" name="RAG System Architecture">
+    <mxGraphModel dx="1380" dy="920" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ═══════════════════════════════════════════════
+             BACKGROUND SWIM LANES
+        ═══════════════════════════════════════════════ -->
+
+        <!-- Ingestion pipeline background -->
+        <mxCell id="bg_ingest" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fff4;strokeColor=#82b366;dashed=1;arcSize=2;opacity=60;" vertex="1" parent="1">
+          <mxGeometry x="20" y="265" width="255" height="545" as="geometry" />
+        </mxCell>
+        <mxCell id="bg_ingest_label" value="📥  INGESTION PIPELINE" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontStyle=1;fontColor=#38761d;" vertex="1" parent="1">
+          <mxGeometry x="20" y="268" width="255" height="14" as="geometry" />
+        </mxCell>
+
+        <!-- Query pipeline background -->
+        <mxCell id="bg_query" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8f0;strokeColor=#d6b656;dashed=1;arcSize=2;opacity=60;" vertex="1" parent="1">
+          <mxGeometry x="460" y="265" width="265" height="475" as="geometry" />
+        </mxCell>
+        <mxCell id="bg_query_label" value="🔍  QUERY PIPELINE" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontStyle=1;fontColor=#7f6000;" vertex="1" parent="1">
+          <mxGeometry x="460" y="268" width="265" height="14" as="geometry" />
+        </mxCell>
+
+        <!-- Storage layer background -->
+        <mxCell id="bg_storage" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;arcSize=2;opacity=50;" vertex="1" parent="1">
+          <mxGeometry x="20" y="840" width="785" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="bg_storage_label" value="💾  STORAGE LAYER  ( ./data/ )" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontStyle=1;fontColor=#595959;" vertex="1" parent="1">
+          <mxGeometry x="20" y="843" width="785" height="14" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════
+             TITLE
+        ═══════════════════════════════════════════════ -->
+        <mxCell id="title" value="Production RAG QA System — Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=17;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="160" y="12" width="660" height="36" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════
+             CLIENT / UI LAYER
+        ═══════════════════════════════════════════════ -->
+
+        <!-- User -->
+        <mxCell id="user" value="👤  User / Client&#xa;(Browser · curl · SDK)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="425" y="55" width="190" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Streamlit UI -->
+        <mxCell id="streamlit" value="📊  Streamlit UI&#xa;streamlit_app.py · port 8501" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="410" y="145" width="220" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- FastAPI band -->
+        <mxCell id="fastapi_band" value="⚡  FastAPI Backend — app/main.py  (port 8000)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;opacity=50;" vertex="1" parent="1">
+          <mxGeometry x="20" y="225" width="940" height="38" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════
+             ROUTES
+        ═══════════════════════════════════════════════ -->
+
+        <!-- POST /upload -->
+        <mxCell id="route_upload" value="POST /upload&#xa;app/api/routes/upload.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="45" y="288" width="205" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- POST /query -->
+        <mxCell id="route_query" value="POST /query&#xa;app/api/routes/query.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="485" y="288" width="215" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- GET /health -->
+        <mxCell id="route_health" value="GET /health&#xa;app/api/routes/health.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="785" y="288" width="175" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════
+             INGESTION PIPELINE
+        ═══════════════════════════════════════════════ -->
+
+        <!-- Save file to disk -->
+        <mxCell id="save_file" value="Save File to Disk&#xa;data/uploads/{id}_{filename}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="45" y="360" width="205" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- DocumentRegistry.create -->
+        <mxCell id="reg_create" value="DocumentRegistry.create()&#xa;status → pending" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="45" y="432" width="205" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- BackgroundTask -->
+        <mxCell id="bgtask" value="🔄  BackgroundTask&#xa;DocumentIngestionService.ingest_document()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="45" y="504" width="205" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- DocumentParser -->
+        <mxCell id="doc_parser" value="DocumentParser&#xa;PDF → PyPDF2 (page-by-page)&#xa;TXT → UTF-8 / latin-1 fallback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="45" y="582" width="205" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- TextChunker -->
+        <mxCell id="chunker" value="TextChunker&#xa;Sliding window: 500 tok · 100 tok overlap&#xa;→ [ChunkRecord]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="45" y="664" width="205" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- EmbeddingService (ingestion) -->
+        <mxCell id="embed_ingest" value="EmbeddingService.embed_texts()&#xa;all-MiniLM-L6-v2 · 384-dim&#xa;L2-normalized float32" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="45" y="746" width="205" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- FaissVectorStore.add (shared write endpoint) -->
+        <mxCell id="faiss_add" value="FaissVectorStore.add_embeddings()&#xa;IndexFlatIP · persist index + metadata" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="285" y="746" width="230" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════
+             QUERY PIPELINE
+        ═══════════════════════════════════════════════ -->
+
+        <!-- Rate limiter -->
+        <mxCell id="rate_limit" value="TokenBucketRateLimiter&#xa;enforce_rate_limit · per-IP sliding window" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="485" y="360" width="215" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- QueryService -->
+        <mxCell id="query_svc" value="QueryService.answer()&#xa;validate scope · orchestrate pipeline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="485" y="432" width="215" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- EmbeddingService (query) -->
+        <mxCell id="embed_query" value="EmbeddingService.embed_query()&#xa;same model as ingestion → float32[384]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="485" y="504" width="215" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- FaissVectorStore.search -->
+        <mxCell id="faiss_search" value="FaissVectorStore.search()&#xa;cosine similarity · top-k · min_score=0.22" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="485" y="576" width="215" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- LLMService -->
+        <mxCell id="llm_svc" value="LLMService.generate_answer()&#xa;grounded prompt · inline citations&#xa;extractive fallback (no API key)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="485" y="648" width="215" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- QueryResponse -->
+        <mxCell id="qresponse" value="QueryResponse&#xa;answer · sources · latency_ms · model" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="485" y="730" width="215" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════
+             EXTERNAL & SUPPORTING
+        ═══════════════════════════════════════════════ -->
+
+        <!-- OpenAI API -->
+        <mxCell id="openai" value="🤖  OpenAI API&#xa;gpt-4o-mini&#xa;temp=0.1 · max_tokens=500" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="648" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- MetricsService -->
+        <mxCell id="metrics" value="MetricsService&#xa;record_query_latency()&#xa;average_query_latency_ms()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="780" y="432" width="180" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- DocumentRegistry (health reads it) -->
+        <mxCell id="doc_reg" value="DocumentRegistry&#xa;counts_by_status()&#xa;app/services/document_registry.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="780" y="360" width="180" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════
+             STORAGE LAYER
+        ═══════════════════════════════════════════════ -->
+
+        <mxCell id="store_uploads" value="data/uploads/&#xa;raw PDF + TXT" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="35" y="857" width="145" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="store_faiss" value="data/index/faiss.index&#xa;float32 vectors" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="205" y="857" width="155" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="store_meta" value="data/index/&#xa;vector_metadata.json&#xa;text · page · doc_id" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="385" y="857" width="155" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="store_docs" value="data/index/&#xa;documents.json&#xa;DocumentRegistry" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="565" y="857" width="155" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════
+             LEGEND
+        ═══════════════════════════════════════════════ -->
+        <mxCell id="legend_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#cccccc;arcSize=5;" vertex="1" parent="1">
+          <mxGeometry x="790" y="795" width="175" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_title" value="Legend" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="800" y="800" width="80" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1" value="Ingestion component" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="820" width="155" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2" value="Query component" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="846" width="155" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3" value="Storage / Shared" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="872" width="155" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg4" value="External API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="898" width="155" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════
+             EDGES
+        ═══════════════════════════════════════════════ -->
+
+        <!-- User → Streamlit -->
+        <mxCell id="e_user_st" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" source="user" target="streamlit" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Streamlit → Upload route (left exit) -->
+        <mxCell id="e_st_upload" value="POST /upload" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="streamlit" target="route_upload" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Streamlit → Query route (right exit) -->
+        <mxCell id="e_st_query" value="POST /query" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;exitX=0.7;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="streamlit" target="route_query" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Streamlit → Health -->
+        <mxCell id="e_st_health" value="GET /health" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;" edge="1" source="streamlit" target="route_health" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Upload pipeline chain -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="route_upload" target="save_file" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="save_file" target="reg_create" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="async" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;dashed=1;" edge="1" source="reg_create" target="bgtask" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="bgtask" target="doc_parser" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="doc_parser" target="chunker" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="chunker" target="embed_ingest" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="vectors" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;" edge="1" source="embed_ingest" target="faiss_add" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Query pipeline chain -->
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="route_query" target="rate_limit" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="rate_limit" target="query_svc" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="query_svc" target="embed_query" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="embed_query" target="faiss_search" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="faiss_search" target="llm_svc" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="llm_svc" target="qresponse" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- LLMService → OpenAI -->
+        <mxCell id="e_llm_oai" value="API call" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;" edge="1" source="llm_svc" target="openai" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- QueryService → MetricsService -->
+        <mxCell id="e_qs_metrics" value="latency" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;dashed=1;" edge="1" source="query_svc" target="metrics" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Health → DocumentRegistry -->
+        <mxCell id="e_health_reg" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;dashed=1;" edge="1" source="route_health" target="doc_reg" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 202 Accepted back to Streamlit -->
+        <mxCell id="e_202" value="202 Accepted" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;strokeColor=#82b366;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=1;entryDx=0;entryDy=0;" edge="1" source="route_upload" target="streamlit" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="400" y="309" />
+              <mxPoint x="400" y="195" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- QueryResponse → Streamlit -->
+        <mxCell id="e_resp_st" value="JSON response" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;strokeColor=#82b366;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=1;entryDx=0;entryDy=0;" edge="1" source="qresponse" target="streamlit" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="440" y="751" />
+              <mxPoint x="440" y="195" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Storage writes from ingestion -->
+        <mxCell id="e_save_disk" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;dashed=1;" edge="1" source="save_file" target="store_uploads" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="108" y="402" />
+              <mxPoint x="108" y="857" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_faiss_write1" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;" edge="1" source="faiss_add" target="store_faiss" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_faiss_write2" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;" edge="1" source="faiss_add" target="store_meta" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_reg_write" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;dashed=1;" edge="1" source="reg_create" target="store_docs" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="400" y="453" />
+              <mxPoint x="400" y="830" />
+              <mxPoint x="643" y="830" />
+              <mxPoint x="643" y="857" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Storage reads from query pipeline (FAISS) -->
+        <mxCell id="e_faiss_read" value="read" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;dashed=1;strokeColor=#9673a6;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="store_faiss" target="faiss_search" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="282" y="835" />
+              <mxPoint x="282" y="597" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
