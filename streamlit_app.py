@@ -108,7 +108,8 @@ if "store_loaded" not in st.session_state:
 if not USE_API_MODE and not st.session_state.store_loaded:
     with st.spinner("Loading vector store…"):
         get_vector_store()       # lru_cache: loads index from disk on first call
-        get_embedding_service()  # warm-up: downloads model if not cached
+    with st.spinner("Loading embedding model (first run may take a minute)…"):
+        get_embedding_service().embed_query("warmup")  # actually downloads + loads the model
     st.session_state.store_loaded = True
 
 # ---------------------------------------------------------------------------
