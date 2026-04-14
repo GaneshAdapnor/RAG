@@ -291,7 +291,15 @@ with st.sidebar:
             if not USE_API_MODE:
                 # Standalone: run ingestion synchronously with a progress indicator
                 with st.spinner(f"Processing '{uf.name}'…"):
-                    backend_ingest_sync(doc_id, uf.name, file_bytes, content_type)
+                    try:
+                        backend_ingest_sync(doc_id, uf.name, file_bytes, content_type)
+                    except Exception as exc:
+                        for doc in st.session_state.documents:
+                            if doc["doc_id"] == doc_id:
+                                doc["status"] = "failed"
+                                doc["error"] = str(exc)
+                        st.error(f"Processing failed: {exc}")
+                        continue
                 # Refresh status from job registry
                 status_data = backend_status(doc_id)
                 if status_data:
@@ -307,7 +315,9 @@ with st.sidebar:
             else:
                 st.info(f"'{uf.name}' accepted. Refresh to update status.")
 
-        st.rerun()
+        # Only rerun when new files were actually processed to avoid infinite rerun loop
+        if new_files:
+            st.rerun()
 
     st.divider()
 
